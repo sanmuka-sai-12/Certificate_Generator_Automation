@@ -1,0 +1,82 @@
+[
+  {
+    "name": "Alex Morgan",
+    "email": "alex.morgan@example.com",
+    "college": "Stanford University",
+    "department": "Computer Science",
+    "position": "1st Place",
+    "reg_no": "CS2026-001"
+  },
+  {
+    "name": "Dr. Bartholomew Montgomery-Worthington III of South Gloucestershire",
+    "email": "bmw3@example.org",
+    "college": "Oxford University",
+    "department": "Quantum Engineering",
+    "position": "Keynote Speaker",
+    "reg_no": "QE992-A"
+  },
+  {
+    "name": "సూర్యనారాయణ మూర్తి కొండేటి",
+    "email": "surya.murthy@example.in",
+    "college": "Andhra University",
+    "department": "Information Technology",
+    "position": "Participant",
+    "reg_no": "AU2026-88"
+  },
+  {
+    "name": "अभिनव शास्त्री उपाध्याय",
+    "email": "abhinav.shastri@example.in",
+    "college": "IIT Bombay",
+    "department": "Electrical Engineering",
+    "position": "Runner Up",
+    "reg_no": "IITB-042"
+  },
+  {
+    "name": "O'Connor <script>alert(1)</script> & Co.",
+    "email": "oconnor.safe@example.com",
+    "college": "MIT",
+    "department": "Cybersecurity",
+    "position": "Participant",
+    "reg_no": "SEC-771"
+  },
+  {
+    "name": "Li",
+    "email": "li.short@example.com",
+    "college": "Tsinghua University",
+    "department": "Mathematics",
+    "position": "Participant",
+    "reg_no": "M01"
+  },
+  {
+    "name": "",
+    "email": "missing.name@example.com",
+    "college": "Sample College",
+    "department": "Arts",
+    "position": "Participant",
+    "reg_no": "ERR-01"
+  },
+  {
+    "name": "Bad Email User",
+    "email": "bademail@not-a-real-domain",
+    "college": "Sample College",
+    "department": "Commerce",
+    "position": "Participant",
+    "reg_no": "ERR-02"
+  },
+  {
+    "name": "Duplicate Alex",
+    "email": "alex.morgan@example.com",
+    "college": "Stanford University",
+    "department": "Computer Science",
+    "position": "Participant",
+    "reg_no": "DUP-01"
+  },
+  {
+    "name": "Priya Sharma",
+    "email": "priya.sharma@example.edu",
+    "college": "Delhi University",
+    "department": "Data Science",
+    "position": "Special Mention",
+    "reg_no": "DU-DS-505"
+  }
+]

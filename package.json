@@ -1,0 +1,22 @@
+{
+  "name": "certificate-generator-automation",
+  "version": "1.0.0",
+  "description": "Smart Certificate Generator & Bulk Email Automation web app built with Google Apps Script",
+  "scripts": {
+    "login": "clasp login",
+    "push": "clasp push",
+    "pull": "clasp pull",
+    "status": "clasp status",
+    "open": "clasp open",
+    "deploy": "clasp deploy --description \"Production release\""
+  },
+  "keywords": [
+    "certificate-generator",
+    "google-apps-script",
+    "clasp",
+    "bulk-email",
+    "automation"
+  ],
+  "author": "sanmuka-sai-12",
+  "license": "MIT"
+}

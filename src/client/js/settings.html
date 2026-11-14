@@ -1,0 +1,49 @@
+<script>
+  /**
+   * Settings Screen Controller
+   */
+  route('settings', async function() {
+    const view = document.getElementById('view');
+    view.innerHTML = `
+      <div class="topbar">
+        <h2>Application Settings</h2>
+      </div>
+      <div class="page-container">
+        <div class="card" style="max-width:720px;">
+          <h3 style="margin-bottom:16px;">Sender & Quota Details</h3>
+          <p class="subtitle">Connected Google account and active email sending capacity.</p>
+          
+          <div style="background:var(--bg-page); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px; margin-bottom:24px;">
+            <div style="font-weight:600; margin-bottom:4px;">Sending as: <span id="settEmail">${currentUser.email || 'Signed in user'}</span></div>
+            <div style="color:var(--text-muted); font-size:0.9rem;">Account Type: <span id="settType">${currentUser.kind}</span></div>
+            <div style="color:var(--text-muted); font-size:0.9rem; margin-top:2px;">Remaining Daily Quota: <b>${currentUser.quota}</b> recipients</div>
+          </div>
+
+          <div style="display:flex; gap:12px; margin-bottom:32px;">
+            <a href="https://myaccount.google.com/permissions" target="_blank" class="btn btn-secondary btn-sm">
+              Manage Google Permissions
+            </a>
+          </div>
+
+          <h3 style="margin-bottom:16px;">Default Certificate Defaults</h3>
+          <div class="form-group">
+            <label>Default Page Size</label>
+            <select class="form-control" id="settSize">
+              <option value="A4_LANDSCAPE">A4 Landscape (3508 x 2480 px, 300 DPI)</option>
+              <option value="A4_PORTRAIT">A4 Portrait (2480 x 3508 px, 300 DPI)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>PDF Quality (0.5 to 1.0)</label>
+            <input type="number" step="0.05" min="0.5" max="1.0" class="form-control" id="settQuality" value="0.92">
+          </div>
+          <div class="form-group">
+            <label>Default Batch Send Size</label>
+            <input type="number" min="10" max="100" class="form-control" id="settBatch" value="50">
+          </div>
+          <button class="btn btn-primary" onclick="toast('Settings saved locally')">Save Preferences</button>
+        </div>
+      </div>
+    `;
+  });
+</script>
