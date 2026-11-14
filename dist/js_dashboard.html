@@ -1,0 +1,177 @@
+<script>
+/**
+ * Dashboard Screen Controller
+ */
+route('dashboard', async function() {
+  const view = document.getElementById('view');
+  view.innerHTML = `
+    <div class="topbar">
+      <h2>Dashboard Overview</h2>
+      <button class="btn btn-primary" onclick="openNewProjectModal()">+ New Project</button>
+    </div>
+    <div class="page-container">
+      <div class="stat-grid" id="dashStats">
+        <div class="stat-card"><div class="label">Total Projects</div><div class="value" id="statProjects">-</div></div>
+        <div class="stat-card"><div class="label">Total Participants</div><div class="value" id="statParticipants">-</div></div>
+        <div class="stat-card"><div class="label">PDFs Generated</div><div class="value" id="statGenerated">-</div></div>
+        <div class="stat-card"><div class="label">Emails Sent</div><div class="value" id="statSent">-</div></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <h3>Recent Projects</h3>
+          <a href="#/projects" class="btn btn-secondary btn-sm">View All</a>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Project Name</th>
+                <th>Event Name</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="dashProjectsList">
+              <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:32px;">Loading projects...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+
+  try {
+    const projects = await api.listProjects();
+    renderDashboard(projects || []);
+  } catch (e) {
+    document.getElementById('dashProjectsList').innerHTML = `
+      <tr><td colspan="5" style="text-align:center; color:var(--danger); padding:24px;">Failed to load projects.</td></tr>
+    `;
+  }
+});
+
+function renderDashboard(projects) {
+  document.getElementById('statProjects').textContent = projects.length;
+  document.getElementById('statParticipants').textContent = '0';
+  document.getElementById('statGenerated').textContent = '0';
+  document.getElementById('statSent').textContent = '0';
+
+  const tbody = document.getElementById('dashProjectsList');
+  if (!projects.length) {
+    tbody.innerHTML = `
+      <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:32px;">
+        No projects created yet. Click "+ New Project" to get started!
+      </td></tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = '';
+  projects.slice(0, 5).forEach(p => {
+    const tr = document.createElement('tr');
+
+    const tdName = document.createElement('td');
+    tdName.style.fontWeight = '600';
+    tdName.textContent = p.name || 'Untitled';
+
+    const tdEvent = document.createElement('td');
+    tdEvent.textContent = p.event_name || '-';
+
+    const tdStatus = document.createElement('td');
+    const badge = document.createElement('span');
+    badge.className = 'badge badge-draft';
+    badge.textContent = p.status || 'draft';
+    tdStatus.appendChild(badge);
+
+    const tdCreated = document.createElement('td');
+    tdCreated.textContent = p.created_at ? new Date(p.created_at).toLocaleDateString() : '-';
+
+    const tdAction = document.createElement('td');
+    const openBtn = document.createElement('a');
+    openBtn.className = 'btn btn-secondary btn-sm';
+    openBtn.href = `#/project/${p.project_id}/manage`;
+    openBtn.textContent = 'Manage';
+    tdAction.appendChild(openBtn);
+
+    tr.appendChild(tdName);
+    tr.appendChild(tdEvent);
+    tr.appendChild(tdStatus);
+    tr.appendChild(tdCreated);
+    tr.appendChild(tdAction);
+    tbody.appendChild(tr);
+  });
+}
+
+function openNewProjectModal() {
+  let modal = document.getElementById('newProjectModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'newProjectModal';
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal-card">
+        <h3 style="margin-bottom:16px;">Create New Certificate Project</h3>
+        <form id="newProjectForm" onsubmit="handleCreateProject(event)">
+          <div class="form-group">
+            <label>Project Name *</label>
+            <input type="text" class="form-control" id="newProjName" placeholder="e.g. Annual Tech Symposium 2026" required>
+          </div>
+          <div class="form-group">
+            <label>Organization / College</label>
+            <input type="text" class="form-control" id="newProjOrg" placeholder="e.g. University Department of CS">
+          </div>
+          <div class="form-group">
+            <label>Event Name</label>
+            <input type="text" class="form-control" id="newProjEvent" placeholder="e.g. National Hackathon">
+          </div>
+          <div class="form-group">
+            <label>Event Date</label>
+            <input type="date" class="form-control" id="newProjDate">
+          </div>
+          <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:24px;">
+            <button type="button" class="btn btn-secondary" onclick="closeNewProjectModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="btnSubmitProject">Create Project</button>
+          </div>
+        </form>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'flex';
+}
+
+function closeNewProjectModal() {
+  const modal = document.getElementById('newProjectModal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function handleCreateProject(e) {
+  e.preventDefault();
+  const btn = document.getElementById('btnSubmitProject');
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+
+  const p = {
+    name: document.getElementById('newProjName').value.trim(),
+    organization: document.getElementById('newProjOrg').value.trim(),
+    event_name: document.getElementById('newProjEvent').value.trim(),
+    event_date: document.getElementById('newProjDate').value
+  };
+
+  try {
+    const res = await api.createProject(p);
+    toast('Project created successfully!');
+    closeNewProjectModal();
+    document.getElementById('newProjectForm').reset();
+    routes.dashboard();
+  } catch (err) {
+    toast(err.message || 'Failed to create project', true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Create Project';
+  }
+}
+
+</script>

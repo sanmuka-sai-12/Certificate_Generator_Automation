@@ -1,17 +1,21 @@
 {
   "name": "certificate-generator-automation",
   "version": "1.0.0",
-  "description": "Smart Certificate Generator & Bulk Email Automation web app built with Google Apps Script",
+  "description": "Smart Certificate Generator & Bulk Email Automation web app built with React frontend and Google Apps Script backend",
   "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "build": "node scripts/build.js",
     "login": "clasp login",
-    "push": "clasp push",
+    "create": "npm run build && clasp create --type webapp --title \"Smart Certificate Generator\" --rootDir ./dist",
+    "push": "npm run build && clasp push",
     "pull": "clasp pull",
     "status": "clasp status",
     "open": "clasp open",
-    "deploy": "clasp deploy --description \"Production release\""
+    "deploy": "npm run build && clasp deploy"
   },
   "keywords": [
     "certificate-generator",
+    "react",
     "google-apps-script",
     "clasp",
     "bulk-email",

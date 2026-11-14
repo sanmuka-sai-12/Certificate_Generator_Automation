@@ -4,7 +4,7 @@
  */
 
 function doGet(e) {
-  const t = HtmlService.createTemplateFromFile('client/index');
+  const t = HtmlService.createTemplateFromFile('index');
   return t.evaluate()
     .setTitle('Smart Certificate Generator')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
@@ -13,7 +13,7 @@ function doGet(e) {
 
 /**
  * Helper to include HTML/CSS/JS partials into templates
- * @param {string} filename - path in Apps Script (e.g., 'client/css/app_css')
+ * @param {string} filename - name of the HTML file in Apps Script (e.g., 'css_app', 'js_api')
  * @returns {string} HTML content
  */
 function include(filename) {

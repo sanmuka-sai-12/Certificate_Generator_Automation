@@ -1,0 +1,114 @@
+<script>
+/**
+ * Certificate Designer Module (Fabric.js 5.3.1)
+ */
+const LOGICAL_WIDTH = 3508;
+const LOGICAL_HEIGHT = 2480;
+let designerCanvas = null;
+
+route('templates', function() {
+  const view = document.getElementById('view');
+  view.innerHTML = `
+    <div class="topbar">
+      <h2>Template Library</h2>
+      <button class="btn btn-primary" onclick="routes['designer']()">+ New Template</button>
+    </div>
+    <div class="page-container">
+      <div class="card">
+        <p style="text-align:center; color:var(--text-muted); padding:32px;">
+          Templates designed or uploaded will appear here. Click "+ New Template" to launch the designer.
+        </p>
+      </div>
+    </div>
+  `;
+});
+
+route('designer', function() {
+  const view = document.getElementById('view');
+  view.innerHTML = `
+    <div class="topbar">
+      <h2>Certificate Designer</h2>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-secondary btn-sm" onclick="routes['templates']()">Back</button>
+        <button class="btn btn-primary btn-sm" onclick="toast('Template design saved')">Save Template</button>
+      </div>
+    </div>
+    <div class="page-container" style="display:flex; gap:20px;">
+      <div style="width:240px;" class="card">
+        <h4>Tools</h4>
+        <div style="display:flex; flex-direction:column; gap:8px; margin-top:12px;">
+          <button class="btn btn-secondary btn-sm" onclick="addDesignerText('Certificate of Achievement')">Add Heading</button>
+          <button class="btn btn-secondary btn-sm" onclick="addDesignerPlaceholder('STUDENT_NAME')">Add {{STUDENT_NAME}}</button>
+          <button class="btn btn-secondary btn-sm" onclick="addDesignerPlaceholder('EVENT_NAME')">Add {{EVENT_NAME}}</button>
+          <button class="btn btn-secondary btn-sm" onclick="addDesignerPlaceholder('CERTIFICATE_ID')">Add {{CERTIFICATE_ID}}</button>
+        </div>
+      </div>
+      <div style="flex:1;" class="card" id="canvasWrap">
+        <canvas id="designerCanvas" width="3508" height="2480"></canvas>
+      </div>
+    </div>
+  `;
+
+  setTimeout(initDesignerCanvas, 100);
+});
+
+function initDesignerCanvas() {
+  const el = document.getElementById('designerCanvas');
+  if (!el || typeof fabric === 'undefined') return;
+
+  designerCanvas = new fabric.Canvas('designerCanvas', {
+    width: LOGICAL_WIDTH,
+    height: LOGICAL_HEIGHT,
+    preserveObjectStacking: true,
+    backgroundColor: '#ffffff'
+  });
+
+  fitDesignerToScreen();
+  window.addEventListener('resize', fitDesignerToScreen);
+}
+
+function fitDesignerToScreen() {
+  const wrap = document.getElementById('canvasWrap');
+  if (!wrap || !designerCanvas) return;
+  const z = Math.min((wrap.clientWidth - 40) / LOGICAL_WIDTH, 500 / LOGICAL_HEIGHT);
+  if (z > 0) {
+    designerCanvas.setZoom(z);
+    designerCanvas.setWidth(LOGICAL_WIDTH * z);
+    designerCanvas.setHeight(LOGICAL_HEIGHT * z);
+  }
+}
+
+function addDesignerText(txt) {
+  if (!designerCanvas) return;
+  const t = new fabric.Textbox(txt, {
+    left: LOGICAL_WIDTH / 2,
+    top: 600,
+    originX: 'center',
+    width: 2400,
+    textAlign: 'center',
+    fontFamily: 'Playfair Display',
+    fontSize: 120,
+    fill: '#1a1a1a'
+  });
+  designerCanvas.add(t);
+  designerCanvas.setActiveObject(t);
+}
+
+function addDesignerPlaceholder(key) {
+  if (!designerCanvas) return;
+  const t = new fabric.Textbox('{{' + key + '}}', {
+    left: LOGICAL_WIDTH / 2,
+    top: 1100,
+    originX: 'center',
+    width: 2400,
+    textAlign: 'center',
+    fontFamily: 'Montserrat',
+    fontSize: 140,
+    fill: '#1d4ed8',
+    data: { dynamic: true, autoShrink: true, maxWidth: 2400, minSize: 50 }
+  });
+  designerCanvas.add(t);
+  designerCanvas.setActiveObject(t);
+}
+
+</script>

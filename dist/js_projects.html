@@ -1,0 +1,120 @@
+<script>
+/**
+ * Projects List Screen Controller
+ */
+route('projects', async function() {
+  const view = document.getElementById('view');
+  view.innerHTML = `
+    <div class="topbar">
+      <h2>All Projects</h2>
+      <button class="btn btn-primary" onclick="openNewProjectModal()">+ New Project</button>
+    </div>
+    <div class="page-container">
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Project Name</th>
+                <th>Organization</th>
+                <th>Event Date</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="fullProjectsList">
+              <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:32px;">Loading projects...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+
+  try {
+    const projects = await api.listProjects();
+    const tbody = document.getElementById('fullProjectsList');
+    if (!projects.length) {
+      tbody.innerHTML = `
+        <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:32px;">
+          No projects found. Create your first project to get started.
+        </td></tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = '';
+    projects.forEach(p => {
+      const tr = document.createElement('tr');
+
+      const tdName = document.createElement('td');
+      tdName.style.fontWeight = '600';
+      tdName.textContent = p.name || 'Untitled';
+
+      const tdOrg = document.createElement('td');
+      tdOrg.textContent = p.organization || '-';
+
+      const tdDate = document.createElement('td');
+      tdDate.textContent = p.event_date || '-';
+
+      const tdStatus = document.createElement('td');
+      const badge = document.createElement('span');
+      badge.className = 'badge badge-draft';
+      badge.textContent = p.status || 'draft';
+      tdStatus.appendChild(badge);
+
+      const tdActions = document.createElement('td');
+      tdActions.style.display = 'flex';
+      tdActions.style.gap = '8px';
+
+      const dupBtn = document.createElement('button');
+      dupBtn.className = 'btn btn-secondary btn-sm';
+      dupBtn.textContent = 'Duplicate';
+      dupBtn.onclick = () => handleDuplicateProject(p.project_id);
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-secondary btn-sm';
+      delBtn.style.color = 'var(--danger)';
+      delBtn.textContent = 'Delete';
+      delBtn.onclick = () => handleDeleteProject(p.project_id, p.name);
+
+      tdActions.appendChild(dupBtn);
+      tdActions.appendChild(delBtn);
+
+      tr.appendChild(tdName);
+      tr.appendChild(tdOrg);
+      tr.appendChild(tdDate);
+      tr.appendChild(tdStatus);
+      tr.appendChild(tdActions);
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    document.getElementById('fullProjectsList').innerHTML = `
+      <tr><td colspan="5" style="text-align:center; color:var(--danger); padding:24px;">Failed to load projects.</td></tr>
+    `;
+  }
+});
+
+async function handleDuplicateProject(projectId) {
+  if (!confirm('Duplicate this project and its settings?')) return;
+  try {
+    await api.duplicateProject(projectId);
+    toast('Project duplicated successfully');
+    routes.projects();
+  } catch (e) {
+    toast(e.message || 'Failed to duplicate project', true);
+  }
+}
+
+async function handleDeleteProject(projectId, name) {
+  if (!confirm(`Are you sure you want to delete "${name}"? This moves its Drive folder and sheet to trash.`)) return;
+  try {
+    await api.deleteProject(projectId);
+    toast('Project deleted');
+    routes.projects();
+  } catch (e) {
+    toast(e.message || 'Failed to delete project', true);
+  }
+}
+
+</script>

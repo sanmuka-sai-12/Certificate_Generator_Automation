@@ -1,0 +1,64 @@
+<script>
+/**
+ * Participant Import & Validation Module
+ */
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const SYNONYMS = {
+  name: ['student name', 'name', 'full name', 'participant', 'candidate'],
+  email: ['email', 'e-mail', 'email id', 'mail', 'mail id'],
+  cert_type: ['certificate type', 'type', 'category'],
+  position: ['position', 'rank', 'prize'],
+  reg_no: ['registration number', 'reg no', 'roll no', 'roll number', 'regd no']
+};
+
+function autoMapHeaders(headers) {
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+  const map = {};
+  Object.keys(SYNONYMS).forEach(k => {
+    const match = headers.find(h => SYNONYMS[k].includes(norm(h)));
+    if (match) map[k] = match;
+  });
+  return map;
+}
+
+function validateParticipantRows(rows, map) {
+  const seen = new Set();
+  return rows.map((r, i) => {
+    const name = String(r[map.name] || '').trim().replace(/\s+/g, ' ');
+    const email = String(r[map.email] || '').trim().toLowerCase();
+    let status = 'valid', reason = '';
+
+    if (!name) {
+      status = 'invalid';
+      reason = 'Missing name';
+    } else if (!EMAIL_REGEX.test(email)) {
+      status = 'invalid';
+      reason = 'Invalid email address';
+    } else if (seen.has(email)) {
+      status = 'duplicate';
+      reason = 'Duplicate email address';
+    }
+
+    seen.add(email);
+    return {
+      rowIndex: i + 1,
+      name: name,
+      email: email,
+      status: status,
+      reason: reason,
+      raw: r
+    };
+  });
+}
+
+function makeCertId(prefix, seq) {
+  return (prefix || 'CERT') + '-' + String(seq).padStart(3, '0');
+}
+
+function makeToken() {
+  const arr = new Uint8Array(9);
+  window.crypto.getRandomValues(arr);
+  return Array.from(arr, b => b.toString(36).padStart(2, '0')).join('').slice(0, 12);
+}
+
+</script>
