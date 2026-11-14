@@ -1,116 +1,155 @@
 /**
- * Google Apps Script API Bridge
- * In production (Apps Script), communicates via google.script.run
- * In local dev (Vite), provides interactive mock persistence via localStorage
+ * FastAPI REST API Client
+ * Connects to http://localhost:8000/api/v1 with graceful local fallback
  */
 
-const LOCAL_STORAGE_KEY_PROJECTS = 'certgen_mock_projects';
-const LOCAL_STORAGE_KEY_TEMPLATES = 'certgen_mock_templates';
+const API_BASE = 'http://localhost:8000/api/v1';
 
-function getLocalProjects() {
+async function request(path, options = {}) {
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY_PROJECTS);
-    return raw ? JSON.parse(raw) : [
-      {
-        project_id: 'p101',
-        name: 'National AI Hackathon 2026',
-        organization: 'National Institute of Technology',
-        event_name: 'HackAI 2026',
-        event_date: '2026-11-20',
-        cert_type: 'Achievement',
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {})
+      },
+      ...options
+    });
+    
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || 'API request failed');
+    }
+    return await res.json();
+  } catch (err) {
+    console.warn(`[FastAPI Request Error on ${path}]:`, err.message);
+    throw err;
+  }
+}
+
+export const api = {
+  // Auth & Senders
+  whoAmI: async () => {
+    return { email: 'organizer@gmail.com' };
+  },
+  
+  senderInfo: async () => {
+    try {
+      const accounts = await request('/auth/accounts');
+      if (accounts && accounts.length > 0) {
+        return {
+          email: accounts[0].sender_email,
+          quota: accounts[0].daily_quota_limit,
+          kind: accounts[0].account_type === 'workspace' ? 'Google Workspace (~1,500/day)' : 'Personal Gmail (~100/day)'
+        };
+      }
+    } catch {}
+    return { email: 'organizer@gmail.com', quota: 100, kind: 'Personal Gmail (~100/day)' };
+  },
+  
+  getGoogleAuthUrl: async () => {
+    return await request('/auth/google/url');
+  },
+
+  // Projects
+  listProjects: async () => {
+    try {
+      return await request('/projects');
+    } catch {
+      // Local fallback
+      const raw = localStorage.getItem('certgen_mock_projects');
+      return raw ? JSON.parse(raw) : [];
+    }
+  },
+
+  createProject: async (projectData) => {
+    try {
+      return await request('/projects', {
+        method: 'POST',
+        body: JSON.stringify(projectData)
+      });
+    } catch (e) {
+      // Local fallback
+      const projects = JSON.parse(localStorage.getItem('certgen_mock_projects') || '[]');
+      const newP = {
+        id: 'p_' + Math.random().toString(36).substring(2, 8),
+        ...projectData,
         status: 'draft',
         created_at: new Date().toISOString()
-      }
-    ];
-  } catch {
-    return [];
-  }
-}
-
-function saveLocalProjects(projects) {
-  try {
-    localStorage.setItem(LOCAL_STORAGE_KEY_PROJECTS, JSON.stringify(projects));
-  } catch (e) {
-    console.error(e);
-  }
-}
-
-export const api = new Proxy({}, {
-  get: (_, fn) => (...args) => new Promise((resolve, reject) => {
-    // Check if running inside Google Apps Script iframe
-    if (typeof window !== 'undefined' && window.google?.script?.run) {
-      window.google.script.run
-        .withSuccessHandler(resolve)
-        .withFailureHandler(err => {
-          const msg = (err && err.message) ? err.message : String(err || 'Server error occurred');
-          reject(new Error(msg));
-        })
-        [fn](...args);
-    } else {
-      // Local development mock environment
-      console.log(`[Dev Mock API Call] -> ${fn}(`, ...args, `)`);
-      setTimeout(() => {
-        try {
-          if (fn === 'whoAmI') {
-            resolve({ email: 'developer@example.com' });
-          } else if (fn === 'senderInfo') {
-            resolve({
-              email: 'developer@example.com',
-              quota: 100,
-              kind: 'Personal Gmail (~100/day)'
-            });
-          } else if (fn === 'listProjects') {
-            resolve(getLocalProjects());
-          } else if (fn === 'createProject') {
-            const p = args[0] || {};
-            const id = 'p_' + Math.random().toString(36).substring(2, 8);
-            const projects = getLocalProjects();
-            const newProj = {
-              project_id: id,
-              name: p.name || 'Untitled Project',
-              organization: p.organization || '',
-              event_name: p.event_name || '',
-              event_date: p.event_date || '',
-              cert_type: p.cert_type || 'Participation',
-              template_id: '',
-              sheetId: 'sheet_' + id,
-              folderId: 'folder_' + id,
-              sender_email: 'developer@example.com',
-              status: 'draft',
-              created_at: new Date().toISOString()
-            };
-            projects.unshift(newProj);
-            saveLocalProjects(projects);
-            resolve({ projectId: id });
-          } else if (fn === 'deleteProject') {
-            const pid = args[0];
-            const filtered = getLocalProjects().filter(p => p.project_id !== pid);
-            saveLocalProjects(filtered);
-            resolve({ ok: true });
-          } else if (fn === 'duplicateProject') {
-            const pid = args[0];
-            const projects = getLocalProjects();
-            const target = projects.find(p => p.project_id === pid);
-            if (target) {
-              const dupId = 'p_' + Math.random().toString(36).substring(2, 8);
-              projects.unshift({
-                ...target,
-                project_id: dupId,
-                name: `${target.name} (Copy)`,
-                created_at: new Date().toISOString()
-              });
-              saveLocalProjects(projects);
-              resolve({ projectId: dupId });
-            } else {
-              reject(new Error('Project not found'));
-            }
-          } else {
-            resolve({ ok: true });
-          }
-        } catch (e) {
-          reject(e);
-        }
-      }, 150);
+      };
+      projects.unshift(newP);
+      localStorage.setItem('certgen_mock_projects', JSON.stringify(projects));
+      return newP;
     }
-  })
-});
+  },
+
+  duplicateProject: async (projectId) => {
+    return await request(`/projects/${projectId}/duplicate`, { method: 'POST' });
+  },
+
+  deleteProject: async (projectId) => {
+    return await request(`/projects/${projectId}`, { method: 'DELETE' });
+  },
+
+  // Participants
+  saveParticipants: async (projectId, list) => {
+    return await request(`/participants/${projectId}/import`, {
+      method: 'POST',
+      body: JSON.stringify({
+        participants: list.map(p => ({
+          name: p.name,
+          email: p.email,
+          cert_type: p.cert_type,
+          college: p.college,
+          department: p.department,
+          reg_no: p.reg_no,
+          position: p.position
+        }))
+      })
+    });
+  },
+
+  getParticipants: async (projectId) => {
+    return await request(`/participants/${projectId}`);
+  },
+
+  getParticipantStats: async (projectId) => {
+    return await request(`/participants/${projectId}/stats`);
+  },
+
+  // Templates
+  saveTemplate: async (tpl) => {
+    return await request('/templates', {
+      method: 'POST',
+      body: JSON.stringify(tpl)
+    });
+  },
+
+  listTemplates: async () => {
+    return await request('/templates');
+  },
+
+  // Emails & Dispatch
+  sendTest: async (projectId, recipientEmail) => {
+    return await request('/emails/test', {
+      method: 'POST',
+      body: JSON.stringify({
+        project_id: projectId,
+        recipient_email: recipientEmail || 'organizer@gmail.com'
+      })
+    });
+  },
+
+  startBatchSending: async (projectId, batchSize = 50) => {
+    return await request('/emails/batch', {
+      method: 'POST',
+      body: JSON.stringify({
+        project_id: projectId,
+        batch_size: batchSize
+      })
+    });
+  },
+
+  getSendingProgress: async (projectId) => {
+    return await request(`/emails/progress/${projectId}`);
+  }
+};

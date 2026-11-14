@@ -5,10 +5,23 @@ package-lock.json
 frontend/package-lock.json
 npm-debug.log*
 
+# Python & virtual environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+*.db
+*.sqlite3
+
 # Build outputs
 frontend/dist/
+dist/
 
-# clasp credentials and local files
+# Credentials & secrets
+.env
 .clasprc.json
 *.local
 
