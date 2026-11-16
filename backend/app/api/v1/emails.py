@@ -20,7 +20,6 @@ def send_test_email(payload: EmailTestRequest, db: Session = Depends(get_db)):
         
     account = db.query(GoogleAccount).filter(GoogleAccount.sender_email == project.sender_email).first()
     if not account:
-        # Fallback to any connected account if project sender is unset
         account = db.query(GoogleAccount).first()
         if not account:
             raise HTTPException(status_code=400, detail="No authorized Google Account found. Please connect in Settings.")
@@ -71,12 +70,59 @@ def start_batch_dispatch(payload: BatchSendRequest, db: Session = Depends(get_db
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
         
+    project.status = "sending"
+    db.commit()
+    
     task = send_batch_emails_task.delay(
         project_id=project.id,
         batch_size=payload.batch_size or 50,
         sender_email=payload.sender_email or project.sender_email
     )
     return {"message": "Batch sending job queued", "task_id": task.id}
+
+@router.post("/pause/{project_id}")
+def pause_sending(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project.status = "paused"
+    db.commit()
+    return {"ok": True, "status": "paused"}
+
+@router.post("/resume/{project_id}")
+def resume_sending(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project.status = "sending"
+    db.commit()
+    task = send_batch_emails_task.delay(
+        project_id=project.id,
+        batch_size=int(project.batch_size or 50),
+        sender_email=project.sender_email
+    )
+    return {"ok": True, "status": "resumed", "task_id": task.id}
+
+@router.post("/retry-failed/{project_id}")
+def retry_failed(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    failed_participants = db.query(Participant).filter(
+        Participant.project_id == project_id,
+        Participant.email_status == "Failed"
+    ).all()
+    
+    count = 0
+    for p in failed_participants:
+        p.email_status = "Retry"
+        p.attempts = 0
+        p.last_error = ""
+        count += 1
+        
+    db.commit()
+    return {"ok": True, "reset_count": count}
 
 @router.get("/progress/{project_id}", response_model=BatchProgressResponse)
 def get_sending_progress(project_id: str, db: Session = Depends(get_db)):
@@ -104,5 +150,5 @@ def get_sending_progress(project_id: str, db: Session = Depends(get_db)):
         "state": project.status or "idle",
         "counts": counts,
         "total": len(participants),
-        "quota_remaining": 100 # Updated by quota check
+        "quota_remaining": 100
     }

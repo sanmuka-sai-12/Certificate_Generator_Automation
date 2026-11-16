@@ -5,10 +5,16 @@ import Projects from './pages/Projects';
 import Designer from './pages/Designer';
 import Settings from './pages/Settings';
 import ProjectWorkspace from './pages/ProjectWorkspace';
+import VerifyCertificate from './pages/VerifyCertificate';
 import NewProjectModal from './components/NewProjectModal';
 import { api } from './services/api';
 
 export default function App() {
+  const isVerificationRoute = window.location.search.includes('id=') && window.location.search.includes('t=') || window.location.hash.includes('#/verify');
+  if (isVerificationRoute) {
+    return <VerifyCertificate />;
+  }
+
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [selectedProject, setSelectedProject] = useState(null);
   const [projects, setProjects] = useState([]);

@@ -149,7 +149,22 @@ export const api = {
     });
   },
 
+  pauseSending: async (projectId) => {
+    return await request(`/emails/pause/${projectId}`, { method: 'POST' });
+  },
+
+  resumeSending: async (projectId) => {
+    return await request(`/emails/resume/${projectId}`, { method: 'POST' });
+  },
+
+  retryFailed: async (projectId) => {
+    return await request(`/emails/retry-failed/${projectId}`, { method: 'POST' });
+  },
+
   getSendingProgress: async (projectId) => {
     return await request(`/emails/progress/${projectId}`);
-  }
+  },
+
+  getZipUrl: (projectId) => `${API_BASE}/certificates/${projectId}/zip`,
+  getDownloadPdfUrl: (projectId, participantId) => `${API_BASE}/certificates/${projectId}/download/${participantId}`
 };
