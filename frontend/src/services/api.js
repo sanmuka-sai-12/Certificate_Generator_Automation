@@ -128,6 +128,16 @@ export const api = {
     return await request('/templates');
   },
 
+  getTemplate: async (templateId) => {
+    return await request(`/templates/${templateId}`);
+  },
+
+  deleteTemplate: async (templateId) => {
+    return await request(`/templates/${templateId}`, {
+      method: 'DELETE'
+    });
+  },
+
   // Emails & Dispatch
   sendTest: async (projectId, recipientEmail) => {
     return await request('/emails/test', {

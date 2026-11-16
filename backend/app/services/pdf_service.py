@@ -85,9 +85,11 @@ def render_certificate_pdf(
         if bg_bytes:
             page.insert_image(fitz.Rect(0, 0, 842, 595.3), stream=bg_bytes)
             
-    # Draw default border if requested or by default
-    page.draw_rect(fitz.Rect(20, 20, 822, 575.3), color=(0.15, 0.25, 0.45), width=2)
-    page.draw_rect(fitz.Rect(24, 24, 818, 571.3), color=(0.75, 0.65, 0.35), width=0.8)
+    # Draw default border only if no custom background and showDefaultBorder is True
+    show_default_border = template_json.get("showDefaultBorder", True) and not bg_img_data
+    if show_default_border:
+        page.draw_rect(fitz.Rect(20, 20, 822, 575.3), color=(0.15, 0.25, 0.45), width=2)
+        page.draw_rect(fitz.Rect(24, 24, 818, 571.3), color=(0.75, 0.65, 0.35), width=0.8)
 
     has_qr_object = False
     
@@ -126,6 +128,29 @@ def render_certificate_pdf(
                 align=fitz.TEXT_ALIGN_CENTER if origin_x == "center" else fitz.TEXT_ALIGN_LEFT
             )
             
+        elif obj_type == "rect":
+            w = (obj.get("width", 100) * obj.get("scaleX", 1)) * scale_x
+            h = (obj.get("height", 100) * obj.get("scaleY", 1)) * scale_y
+            fill_c = parse_color(obj.get("fill"))
+            stroke_c = parse_color(obj.get("stroke"))
+            stroke_w = (obj.get("strokeWidth") or 0) * scale_x
+            if fill_c or stroke_c:
+                page.draw_rect(
+                    fitz.Rect(left, top, left + w, top + h),
+                    color=stroke_c,
+                    fill=fill_c,
+                    width=stroke_w if stroke_c else 0
+                )
+                
+        elif obj_type == "line":
+            x1 = obj.get("x1", 0) * scale_x
+            y1 = obj.get("y1", 0) * scale_y
+            x2 = obj.get("x2", 0) * scale_x
+            y2 = obj.get("y2", 0) * scale_y
+            stroke_c = parse_color(obj.get("stroke", "#000000")) or (0, 0, 0)
+            stroke_w = (obj.get("strokeWidth") or 1) * scale_x
+            page.draw_line(fitz.Point(x1, y1), fitz.Point(x2, y2), color=stroke_c, width=stroke_w)
+
         elif obj_type == "image":
             src = obj.get("src", "")
             if src.startswith("data:"):

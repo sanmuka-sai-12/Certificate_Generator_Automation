@@ -111,3 +111,59 @@ def test_pdf_rendering():
     assert pdf_bytes is not None
     assert len(pdf_bytes) > 1000
     assert pdf_bytes.startswith(b"%PDF")
+
+def test_template_crud():
+    # 1. Create a template
+    payload = {
+        "name": "Unit Test Template",
+        "width": 3508,
+        "height": 2480,
+        "orientation": "landscape",
+        "template_json": {
+            "page": {"width": 3508, "height": 2480},
+            "objects": [
+                {"type": "rect", "left": 60, "top": 60, "width": 3388, "height": 2360, "stroke": "#0f2744", "strokeWidth": 6},
+                {"type": "line", "x1": 500, "y1": 2100, "x2": 1100, "y2": 2100, "stroke": "#0f2744", "strokeWidth": 3},
+                {"type": "text", "text": "{{STUDENT_NAME}}", "left": 1754, "top": 1100, "originX": "center", "fontSize": 150}
+            ]
+        },
+        "thumbnail_data_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    }
+    res = client.post("/api/v1/templates", json=payload)
+    assert res.status_code == 200
+    tpl = res.json()
+    tpl_id = tpl["id"]
+    assert tpl["name"] == "Unit Test Template"
+
+    # 2. List templates
+    res = client.get("/api/v1/templates")
+    assert res.status_code == 200
+    templates = res.json()
+    assert any(t["id"] == tpl_id for t in templates)
+
+    # 3. Get single template
+    res = client.get(f"/api/v1/templates/{tpl_id}")
+    assert res.status_code == 200
+    assert res.json()["id"] == tpl_id
+
+    # 4. Render PDF with custom shapes (rect and line)
+    p_data = {
+        "name": "Jane Doe",
+        "cert_id": "TEST-SHAPE-001",
+        "verify_token": "token1234567"
+    }
+    evt_data = {
+        "event_name": "Shape Test Con",
+        "organization": "Test Org"
+    }
+    pdf_bytes = render_certificate_pdf(tpl["template_json"], p_data, evt_data)
+    assert pdf_bytes.startswith(b"%PDF")
+
+    # 5. Delete template
+    res = client.delete(f"/api/v1/templates/{tpl_id}")
+    assert res.status_code == 200
+    assert res.json()["ok"] is True
+
+    # 6. Verify 404 after deletion
+    res = client.get(f"/api/v1/templates/{tpl_id}")
+    assert res.status_code == 404

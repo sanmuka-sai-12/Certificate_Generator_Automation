@@ -110,6 +110,10 @@ export default function App() {
           <ProjectWorkspace 
             project={selectedProject}
             onBack={() => setSelectedProject(null)}
+            onNavigateToDesigner={() => {
+              setSelectedProject(null);
+              setCurrentTab('designer');
+            }}
             showToast={showToast}
           />
         ) : currentTab === 'dashboard' ? (

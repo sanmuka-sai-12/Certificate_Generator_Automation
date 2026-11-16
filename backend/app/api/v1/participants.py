@@ -25,10 +25,17 @@ def bulk_import_participants(project_id: str, payload: ParticipantBulkImport, db
     
     saved_count = 0
     seen_emails = set()
+    assigned_cert_ids = set()
+    seq = count_existing
     
-    for idx, p in enumerate(payload.participants):
-        seq = count_existing + idx + 1
+    for p in payload.participants:
+        seq += 1
         cert_id = f"{prefix}-{str(seq).zfill(3)}"
+        while cert_id in assigned_cert_ids or db.query(Participant).filter(Participant.cert_id == cert_id).first():
+            seq += 1
+            cert_id = f"{prefix}-{str(seq).zfill(3)}"
+            
+        assigned_cert_ids.add(cert_id)
         verify_token = generate_secure_token(12)
         
         email_clean = p.email.strip().lower()

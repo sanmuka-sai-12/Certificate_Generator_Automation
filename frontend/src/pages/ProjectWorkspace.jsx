@@ -32,7 +32,7 @@ const SYNONYMS = {
   reg_no: ['registration number', 'reg no', 'roll no', 'roll number']
 };
 
-export default function ProjectWorkspace({ project, onBack, showToast }) {
+export default function ProjectWorkspace({ project, onBack, onNavigateToDesigner, showToast }) {
   const [activeStep, setActiveStep] = useState('import'); // 'import' | 'preview' | 'email'
   
   // Import state
@@ -648,6 +648,16 @@ export default function ProjectWorkspace({ project, onBack, showToast }) {
             </div>
 
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              {onNavigateToDesigner && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={onNavigateToDesigner}
+                  title="Customize template canvas in Designer"
+                >
+                  <Eye size={16} /> Open Template Studio
+                </button>
+              )}
               <a
                 href={api.getZipUrl(project.id)}
                 className="btn btn-secondary"
