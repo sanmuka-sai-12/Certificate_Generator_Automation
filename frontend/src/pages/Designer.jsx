@@ -1,3 +1,28 @@
+/**
+ * =====================================================================================
+ * Smart Certificate Generator - Designer & Template Studio (Phase 2)
+ * =====================================================================================
+ * 
+ * This module provides an interactive visual canvas editor built on Fabric.js (v5.3).
+ * 
+ * Key Architectural Decisions:
+ * 1. Fixed Logical Dimensions:
+ *    - Logical Canvas is pinned to 3508 x 2480 pixels (A4 Landscape at 300 DPI).
+ *    - All positioning, font sizes, line widths, and coordinates are strictly stored in
+ *      logical pixel units, independent of viewport scaling or device pixel ratios.
+ * 2. Responsive Viewport Scaling:
+ *    - The canvas is visually scaled via Fabric's `setZoom()` to fit any screen or window
+ *      size without changing the underlying logical coordinates.
+ * 3. Dynamic Field Auto-Shrinking:
+ *    - Dynamic placeholders (e.g. `{{STUDENT_NAME}}`) carry custom metadata (`autoShrink`,
+ *      `maxWidth`, `minSize`) enabling automatic font scaling when long names are rendered.
+ * 4. Tamper-Proof QR Integration:
+ *    - Supports embedding a verification QR code placeholder linking to the public validation URL.
+ * 5. Undo/Redo & State History:
+ *    - Implements an immutable snapshot history stack (up to 50 operations) with lock guards.
+ * =====================================================================================
+ */
+
 import React, { useEffect, useRef, useState } from 'react';
 import { fabric } from 'fabric';
 import { 
@@ -35,16 +60,22 @@ import {
 import TopBar from '../components/TopBar';
 import { api } from '../services/api';
 
+/** Standard A4 Landscape at 300 DPI */
 const LOGICAL_WIDTH = 3508;
 const LOGICAL_HEIGHT = 2480;
 
 export default function Designer({ showToast }) {
-  const canvasRef = useRef(null);
-  const containerRef = useRef(null);
-  const [canvas, setCanvas] = useState(null);
-  const [selectedObj, setSelectedObj] = useState(null);
-  
-  // Object Properties State
+  // -----------------------------------------------------------------------------------
+  // DOM & Fabric Canvas References
+  // -----------------------------------------------------------------------------------
+  const canvasRef = useRef(null);       // Reference to HTML5 <canvas> element
+  const containerRef = useRef(null);    // Reference to parent viewport container
+  const [canvas, setCanvas] = useState(null); // Active Fabric.js Canvas instance
+  const [selectedObj, setSelectedObj] = useState(null); // Currently focused canvas object
+
+  // -----------------------------------------------------------------------------------
+  // Object Properties State (Synchronized with selected canvas item)
+  // -----------------------------------------------------------------------------------
   const [fontSize, setFontSize] = useState(120);
   const [fontFamily, setFontFamily] = useState('Playfair Display');
   const [fillColor, setFillColor] = useState('#0f2744');
@@ -55,49 +86,65 @@ export default function Designer({ showToast }) {
   const [isLocked, setIsLocked] = useState(false);
   const [posX, setPosX] = useState(0);
   const [posY, setPosY] = useState(0);
+
+  // Dynamic Placeholder Properties
   const [isDynamic, setIsDynamic] = useState(false);
   const [autoShrink, setAutoShrink] = useState(true);
   const [maxWidth, setMaxWidth] = useState(2400);
 
-  // Template State
+  // -----------------------------------------------------------------------------------
+  // Template & History State
+  // -----------------------------------------------------------------------------------
   const [templateName, setTemplateName] = useState('Official Certificate Template');
   const [templateType, setTemplateType] = useState('Participation');
-  const [templates, setTemplates] = useState([]);
-  const [history, setHistory] = useState([]);
-  const [redoStack, setRedoStack] = useState([]);
-  const isHistoryLocked = useRef(false);
+  const [templates, setTemplates] = useState([]); // Saved templates loaded from database
+  const [history, setHistory] = useState([]);     // Undo command stack (JSON snapshots)
+  const [redoStack, setRedoStack] = useState([]); // Redo command stack
+  const isHistoryLocked = useRef(false);          // Guard flag preventing feedback loops during undo/redo
 
-  // Viewport Zoom
+  // -----------------------------------------------------------------------------------
+  // Viewport & UI Drawer State
+  // -----------------------------------------------------------------------------------
   const [zoomLevel, setZoomLevel] = useState(1);
-  const [activeTab, setActiveTab] = useState('fields'); // 'fields', 'text', 'shapes', 'uploads', 'presets'
+  const [activeTab, setActiveTab] = useState('fields'); // Active tool tab: 'fields' | 'text' | 'shapes' | 'uploads' | 'presets'
 
+  // Fetch saved templates from PostgreSQL on mount
   useEffect(() => {
     loadSavedTemplates();
   }, []);
 
+  /**
+   * Loads existing saved templates from the backend API into local state.
+   */
   async function loadSavedTemplates() {
     try {
       const list = await api.listTemplates();
       setTemplates(list || []);
-    } catch {}
+    } catch (err) {
+      console.warn('Could not load saved templates from API:', err.message);
+    }
   }
 
-  // Initialize Canvas
+  // -----------------------------------------------------------------------------------
+  // Canvas Initialization & Lifecycle
+  // -----------------------------------------------------------------------------------
   useEffect(() => {
     if (!canvasRef.current) return;
 
+    // Initialize Fabric Canvas with fixed 3508x2480 logical dimensions
     const fc = new fabric.Canvas(canvasRef.current, {
       width: LOGICAL_WIDTH,
       height: LOGICAL_HEIGHT,
-      preserveObjectStacking: true,
+      preserveObjectStacking: true, // Maintain z-index layers during selection
       backgroundColor: '#ffffff'
     });
 
     setCanvas(fc);
 
-    // Apply default "Classic Formal" preset initially
+    // Apply the "Classic Formal" default certificate design preset
     applyClassicPreset(fc);
 
+    // Canvas Selection Event Listeners
     fc.on('selection:created', e => updateSelection(e.selected[0]));
     fc.on('selection:updated', e => updateSelection(e.selected[0]));
     fc.on('selection:cleared', () => {
@@ -105,6 +152,7 @@ export default function Designer({ showToast }) {
       setIsDynamic(false);
     });
 
+    // History Tracking Event Listeners
     fc.on('object:modified', () => {
       recordHistory(fc);
       if (fc.getActiveObject()) updateSelection(fc.getActiveObject());
@@ -112,6 +160,10 @@ export default function Designer({ showToast }) {
     fc.on('object:added', () => recordHistory(fc));
     fc.on('object:removed', () => recordHistory(fc));
 
+    /**
+     * Dynamically calculates zoom factor so the 3508x2480 canvas fits cleanly inside
+     * the user's viewport without clipping or distortion.
+     */
     function fitToScreen() {
       if (!containerRef.current) return;
       const wrap = containerRef.current;
@@ -128,26 +180,37 @@ export default function Designer({ showToast }) {
     fitToScreen();
     window.addEventListener('resize', fitToScreen);
 
+    // Cleanup canvas resources on unmount
     return () => {
       window.removeEventListener('resize', fitToScreen);
       fc.dispose();
     };
   }, []);
 
-  // Keyboard Shortcuts (Delete, Undo, Redo, Arrow Nudge)
+  // -----------------------------------------------------------------------------------
+  // Keyboard Shortcuts (Delete, Undo, Redo, Precision Nudge)
+  // -----------------------------------------------------------------------------------
   useEffect(() => {
     function handleKeyDown(e) {
+      // Do not intercept keystrokes if the user is typing in a form input or textarea
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
 
+      // Delete / Backspace: Remove selected canvas element
       if (e.key === 'Delete' || e.key === 'Backspace') {
         deleteSelectedObject();
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+      } 
+      // Ctrl+Z / Cmd+Z: Undo previous action
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         e.preventDefault();
         handleUndo();
-      } else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+      } 
+      // Ctrl+Y or Ctrl+Shift+Z: Redo previously undone action
+      else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
         e.preventDefault();
         handleRedo();
-      } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && selectedObj) {
+      } 
+      // Arrow keys: Nudge selected object by 2px (or 10px if Shift key is held)
+      else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && selectedObj) {
         e.preventDefault();
         const step = e.shiftKey ? 10 : 2;
         if (e.key === 'ArrowUp') selectedObj.top -= step;
@@ -165,14 +228,25 @@ export default function Designer({ showToast }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [canvas, selectedObj, history, redoStack]);
 
+  // -----------------------------------------------------------------------------------
+  // History & Snapshot Management (Undo / Redo)
+  // -----------------------------------------------------------------------------------
+
+  /**
+   * Records a snapshot of the current canvas state into the history stack.
+   * Capped at 50 snapshots to prevent memory leaks while supporting extensive edits.
+   */
   function recordHistory(fcInstance) {
     const c = fcInstance || canvas;
     if (!c || isHistoryLocked.current) return;
     const json = JSON.stringify(c.toJSON(['data']));
-    setHistory(prev => [...prev.slice(-49), json]); // Up to 50 snapshots
-    setRedoStack([]);
+    setHistory(prev => [...prev.slice(-49), json]);
+    setRedoStack([]); // Clear redo stack on any new user modification
   }
 
+  /**
+   * Reverts canvas state to the previous snapshot in the history stack.
+   */
   function handleUndo() {
     if (history.length < 2 || !canvas) return;
     isHistoryLocked.current = true;
@@ -188,6 +262,9 @@ export default function Designer({ showToast }) {
     });
   }
 
+  /**
+   * Advances canvas state to the next snapshot in the redo stack.
+   */
   function handleRedo() {
     if (redoStack.length === 0 || !canvas) return;
     isHistoryLocked.current = true;
@@ -202,6 +279,13 @@ export default function Designer({ showToast }) {
     });
   }
 
+  // -----------------------------------------------------------------------------------
+  // Object Selection & Property Synchronization
+  // -----------------------------------------------------------------------------------
+
+  /**
+   * Syncs UI property controls with the currently selected Fabric.js object.
+   */
   function updateSelection(obj) {
     if (!obj) return;
     setSelectedObj(obj);
@@ -216,6 +300,7 @@ export default function Designer({ showToast }) {
     setPosX(Math.round(obj.left || 0));
     setPosY(Math.round(obj.top || 0));
 
+    // Inspect custom metadata for dynamic recipient placeholder settings
     const isDyn = Boolean(obj.data && obj.data.dynamic);
     setIsDynamic(isDyn);
     if (isDyn) {
@@ -224,6 +309,9 @@ export default function Designer({ showToast }) {
     }
   }
 
+  /**
+   * Updates a specific property on the currently selected object and triggers re-render.
+   */
   function updateProperty(prop, val) {
     if (!canvas || !selectedObj) return;
     selectedObj.set(prop, val);
@@ -231,7 +319,14 @@ export default function Designer({ showToast }) {
     recordHistory();
   }
 
-  // --- PRESET TEMPLATES ---
+  // -----------------------------------------------------------------------------------
+  // Preset Certificate Templates
+  // -----------------------------------------------------------------------------------
+
+  /**
+   * Preset 1: Classic Academic & Diploma
+   * Double borders in Navy and Gold with Playfair Display serif typography.
+   */
   function applyClassicPreset(fc = canvas) {
     if (!fc) return;
     fc.clear();
@@ -243,7 +338,7 @@ export default function Designer({ showToast }) {
       fill: 'transparent', stroke: '#0f2744', strokeWidth: 8, selectable: false, evented: false
     }));
 
-    // Inner Gold Border
+    // Inner Warm Gold Border
     fc.add(new fabric.Rect({
       left: 80, top: 80, width: LOGICAL_WIDTH - 160, height: LOGICAL_HEIGHT - 160,
       fill: 'transparent', stroke: '#b8964e', strokeWidth: 3, selectable: false, evented: false
@@ -255,40 +350,40 @@ export default function Designer({ showToast }) {
       fontFamily: 'Playfair Display', fontSize: 130, fontWeight: 'bold', fill: '#0f2744'
     }));
 
-    // Subtitle
+    // Presentation Subtitle
     fc.add(new fabric.Textbox('PROUDLY PRESENTED TO', {
       left: LOGICAL_WIDTH / 2, top: 820, originX: 'center', width: 2000, textAlign: 'center',
       fontFamily: 'Montserrat', fontSize: 50, fill: '#64748b'
     }));
 
-    // Dynamic Student Name
+    // Dynamic Recipient Name (with Auto-Shrink protection)
     fc.add(new fabric.Textbox('{{STUDENT_NAME}}', {
       left: LOGICAL_WIDTH / 2, top: 1060, originX: 'center', width: 2500, textAlign: 'center',
       fontFamily: 'Montserrat', fontWeight: 'bold', fontSize: 160, fill: '#0f2744',
       data: { dynamic: true, autoShrink: true, maxWidth: 2500, minSize: 60 }
     }));
 
-    // Description
+    // Event & Organization Description
     fc.add(new fabric.Textbox('for outstanding and active participation in {{EVENT_NAME}} organized by {{ORG_NAME}} on {{EVENT_DATE}}', {
       left: LOGICAL_WIDTH / 2, top: 1420, originX: 'center', width: 2400, textAlign: 'center',
       fontFamily: 'Montserrat', fontSize: 55, fill: '#334155'
     }));
 
-    // Signatory 1 (Left)
+    // Left Signatory Underline & Title
     fc.add(new fabric.Line([450, 2100, 1150, 2100], { stroke: '#0f2744', strokeWidth: 3 }));
     fc.add(new fabric.Textbox('PROGRAM CONVENER', {
       left: 800, top: 2130, originX: 'center', width: 700, textAlign: 'center',
       fontFamily: 'Montserrat', fontSize: 40, fill: '#64748b'
     }));
 
-    // Signatory 2 (Right)
+    // Right Signatory Underline & Title
     fc.add(new fabric.Line([2358, 2100, 3058, 2100], { stroke: '#0f2744', strokeWidth: 3 }));
     fc.add(new fabric.Textbox('HEAD OF INSTITUTION', {
       left: 2708, top: 2130, originX: 'center', width: 700, textAlign: 'center',
       fontFamily: 'Montserrat', fontSize: 40, fill: '#64748b'
     }));
 
-    // Center QR Placeholder
+    // Tamper-Proof QR Code Verification Stamp Placeholder
     fc.add(new fabric.Textbox('{{VERIFY_URL}}', {
       left: LOGICAL_WIDTH / 2, top: 2080, originX: 'center', width: 600, textAlign: 'center',
       fontFamily: 'Montserrat', fontSize: 32, fill: '#94a3b8',
@@ -299,6 +394,10 @@ export default function Designer({ showToast }) {
     recordHistory(fc);
   }
 
+  /**
+   * Preset 2: Tech Hackathon & AI Award
+   * Modern dark slate palette (#0b132b) with vibrant cyan and indigo neon accents.
+   */
   function applyHackathonPreset() {
     if (!canvas) return;
     canvas.clear();
@@ -361,6 +460,10 @@ export default function Designer({ showToast }) {
     showToast('Loaded Tech Hackathon Preset');
   }
 
+  /**
+   * Preset 3: Golden Excellence & Distinction
+   * Antique gold borders (#b45309) with Great Vibes calligraphy typography.
+   */
   function applyExcellencePreset() {
     if (!canvas) return;
     canvas.clear();
@@ -421,7 +524,14 @@ export default function Designer({ showToast }) {
     showToast('Loaded Golden Excellence Preset');
   }
 
-  // --- TOOLS: INSERT FIELDS, SHAPES, TEXT ---
+  // -----------------------------------------------------------------------------------
+  // Dynamic Field & Element Injectors
+  // -----------------------------------------------------------------------------------
+
+  /**
+   * Adds a dynamic placeholder text chip (e.g. {{STUDENT_NAME}}, {{EVENT_NAME}})
+   * with auto-shrink parameters configured.
+   */
   function addPlaceholder(field) {
     if (!canvas) return;
     const t = new fabric.Textbox(`{{${field}}}`, {
@@ -448,6 +558,7 @@ export default function Designer({ showToast }) {
     showToast(`Added field: {{${field}}}`);
   }
 
+  /** Adds a standard bold title header block */
   function addHeadingText(text = 'CERTIFICATE OF ACHIEVEMENT') {
     if (!canvas) return;
     const t = new fabric.Textbox(text, {
@@ -467,6 +578,7 @@ export default function Designer({ showToast }) {
     recordHistory();
   }
 
+  /** Adds a standard presentation paragraph text block */
   function addBodyText(text = 'This certificate is presented in recognition of participation.') {
     if (!canvas) return;
     const t = new fabric.Textbox(text, {
@@ -485,6 +597,7 @@ export default function Designer({ showToast }) {
     recordHistory();
   }
 
+  /** Adds a dual ornamental outer/inner border frame */
   function addDoubleBorder() {
     if (!canvas) return;
     const b1 = new fabric.Rect({
@@ -504,6 +617,7 @@ export default function Designer({ showToast }) {
     showToast('Added decorative double border');
   }
 
+  /** Adds a horizontal divider line suitable for signatures or section breaks */
   function addDividerLine() {
     if (!canvas) return;
     const line = new fabric.Line([LOGICAL_WIDTH / 2 - 350, 1600, LOGICAL_WIDTH / 2 + 350, 1600], {
@@ -517,6 +631,7 @@ export default function Designer({ showToast }) {
     showToast('Added divider rule');
   }
 
+  /** Adds a rounded decorative accent banner box */
   function addDecorativeBox() {
     if (!canvas) return;
     const rect = new fabric.Rect({
@@ -538,6 +653,7 @@ export default function Designer({ showToast }) {
     showToast('Added decorative banner box');
   }
 
+  /** Adds a verification QR code placeholder */
   function addQrPlaceholder() {
     if (!canvas) return;
     const qrText = new fabric.Textbox('{{VERIFY_URL}}', {
@@ -558,7 +674,13 @@ export default function Designer({ showToast }) {
     showToast('Added QR Code stamp placeholder');
   }
 
-  // --- IMAGE & BACKGROUND UPLOADS WITH DPI CHECK ---
+  // -----------------------------------------------------------------------------------
+  // Image Uploads & Print Quality DPI Resolution Checker
+  // -----------------------------------------------------------------------------------
+
+  /**
+   * Uploads an institution logo or official signature (transparent PNG).
+   */
   function handleImageUpload(e) {
     const file = e.target.files[0];
     if (!file || !canvas) return;
@@ -583,6 +705,10 @@ export default function Designer({ showToast }) {
     e.target.value = '';
   }
 
+  /**
+   * Uploads and scales a custom background graphic.
+   * Performs DPI resolution verification: warns if below 150 DPI (~1800x1200 px).
+   */
   function handleBackgroundUpload(e) {
     const file = e.target.files[0];
     if (!file || !canvas) return;
@@ -594,10 +720,12 @@ export default function Designer({ showToast }) {
       probe.onload = () => {
         const w = probe.naturalWidth;
         const h = probe.naturalHeight;
-        // DPI Check: A4 at 150 DPI is ~1754 x 1240, 300 DPI is 3508 x 2480
+        
+        // DPI Validation check against 150 DPI threshold
         if (w < 1800 || h < 1200) {
           showToast(`⚠️ Low resolution image (${w}x${h}px). Recommended: 3508x2480px (300 DPI) for high-res printing.`);
         }
+        
         fabric.Image.fromURL(dataUrl, img => {
           img.set({
             scaleX: LOGICAL_WIDTH / img.width,
@@ -616,7 +744,11 @@ export default function Designer({ showToast }) {
     e.target.value = '';
   }
 
-  // --- OBJECT MANIPULATION & ORDERING ---
+  // -----------------------------------------------------------------------------------
+  // Object Alignment, Geometry & Layer Ordering
+  // -----------------------------------------------------------------------------------
+
+  /** Center selected object horizontally along the X axis */
   function centerObjectHorizontally() {
     if (!canvas || !selectedObj) return;
     selectedObj.centerH();
@@ -626,6 +758,7 @@ export default function Designer({ showToast }) {
     recordHistory();
   }
 
+  /** Center selected object vertically along the Y axis */
   function centerObjectVertically() {
     if (!canvas || !selectedObj) return;
     selectedObj.centerV();
@@ -635,6 +768,7 @@ export default function Designer({ showToast }) {
     recordHistory();
   }
 
+  /** Move selected object one layer forward */
   function bringForward() {
     if (!canvas || !selectedObj) return;
     canvas.bringForward(selectedObj);
@@ -642,6 +776,7 @@ export default function Designer({ showToast }) {
     recordHistory();
   }
 
+  /** Move selected object one layer backward */
   function sendBackward() {
     if (!canvas || !selectedObj) return;
     canvas.sendBackwards(selectedObj);
@@ -649,6 +784,7 @@ export default function Designer({ showToast }) {
     recordHistory();
   }
 
+  /** Move selected object to the very front */
   function bringToFront() {
     if (!canvas || !selectedObj) return;
     canvas.bringToFront(selectedObj);
@@ -656,6 +792,7 @@ export default function Designer({ showToast }) {
     recordHistory();
   }
 
+  /** Move selected object to the very back */
   function sendToBack() {
     if (!canvas || !selectedObj) return;
     canvas.sendToBack(selectedObj);
@@ -663,6 +800,7 @@ export default function Designer({ showToast }) {
     recordHistory();
   }
 
+  /** Creates a duplicate clone of the selected object offset by 50px */
   function duplicateSelectedObject() {
     if (!canvas || !selectedObj) return;
     selectedObj.clone(cloned => {
@@ -679,6 +817,7 @@ export default function Designer({ showToast }) {
     }, ['data']);
   }
 
+  /** Toggles movement and transformation locking on the selected object */
   function toggleLock() {
     if (!canvas || !selectedObj) return;
     const lockState = !isLocked;
@@ -696,6 +835,7 @@ export default function Designer({ showToast }) {
     showToast(lockState ? 'Object locked' : 'Object unlocked');
   }
 
+  /** Removes the selected object from the canvas */
   function deleteSelectedObject() {
     if (!canvas || !selectedObj) return;
     canvas.remove(selectedObj);
@@ -706,7 +846,13 @@ export default function Designer({ showToast }) {
     showToast('Object deleted');
   }
 
-  // --- TEMPLATE SAVE / LOAD / EXPORT / IMPORT ---
+  // -----------------------------------------------------------------------------------
+  // Template Storage, Import/Export & PNG Rendering
+  // -----------------------------------------------------------------------------------
+
+  /**
+   * Serializes canvas to JSON schema and stores it in PostgreSQL via the REST API.
+   */
   async function handleSaveTemplate() {
     if (!canvas) return;
     const json = canvas.toJSON(['data']);
@@ -729,6 +875,9 @@ export default function Designer({ showToast }) {
     }
   }
 
+  /**
+   * Loads a saved template from PostgreSQL into the active Fabric canvas.
+   */
   function handleLoadTemplate(tpl) {
     if (!canvas || !tpl.template_json) return;
     canvas.loadFromJSON(tpl.template_json, () => {
@@ -739,6 +888,9 @@ export default function Designer({ showToast }) {
     });
   }
 
+  /**
+   * Deletes a template from the database library with user confirmation.
+   */
   async function handleDeleteSavedTemplate(id, name, e) {
     e.stopPropagation();
     if (!window.confirm(`Delete template "${name}" from library?`)) return;
@@ -751,6 +903,9 @@ export default function Designer({ showToast }) {
     }
   }
 
+  /**
+   * Exports the canvas as a downloadable `.json` template definition file.
+   */
   function exportTemplateJSON() {
     if (!canvas) return;
     const json = canvas.toJSON(['data']);
@@ -765,6 +920,9 @@ export default function Designer({ showToast }) {
     showToast('Exported template JSON');
   }
 
+  /**
+   * Reads a `.json` file from disk and loads it onto the canvas.
+   */
   function handleImportJSON(e) {
     const file = e.target.files[0];
     if (!file || !canvas) return;
@@ -785,11 +943,15 @@ export default function Designer({ showToast }) {
     e.target.value = '';
   }
 
+  /**
+   * Renders the canvas at full 3508x2480 resolution (1:1 logical pixels) and downloads
+   * a high-resolution PNG for instant visual inspection.
+   */
   function exportSamplePNG() {
     if (!canvas) return;
     const dataUrl = canvas.toDataURL({
       format: 'png',
-      multiplier: 1.0 // High resolution 3508 x 2480 (300 DPI)
+      multiplier: 1.0 // Full 3508 x 2480 300 DPI resolution
     });
     const link = document.createElement('a');
     link.download = `${templateName.replace(/\s+/g, '_')}_300DPI_preview.png`;
@@ -798,6 +960,7 @@ export default function Designer({ showToast }) {
     showToast('Downloaded full-resolution preview PNG (3508x2480)');
   }
 
+  /** Resets canvas viewport zoom so the certificate fits perfectly in view */
   function resetFitZoom() {
     if (!containerRef.current || !canvas) return;
     const wrap = containerRef.current;
@@ -811,6 +974,7 @@ export default function Designer({ showToast }) {
     }
   }
 
+  /** Manually adjusts viewport zoom level by a multiplying factor */
   function adjustZoom(factor) {
     if (!canvas) return;
     const newZoom = Math.max(0.08, Math.min(0.8, canvas.getZoom() * factor));
@@ -820,12 +984,17 @@ export default function Designer({ showToast }) {
     setZoomLevel(newZoom);
   }
 
+  // -----------------------------------------------------------------------------------
+  // View Rendering
+  // -----------------------------------------------------------------------------------
   return (
     <>
+      {/* Top Application Header Bar */}
       <TopBar 
         title="Certificate Designer & Template Studio"
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Template Title Input */}
             <input
               type="text"
               value={templateName}
@@ -835,6 +1004,7 @@ export default function Designer({ showToast }) {
               title="Template Name"
             />
             
+            {/* Undo / Redo Navigation */}
             <div style={{ display: 'flex', gap: '4px' }}>
               <button 
                 className="btn btn-secondary btn-sm" 
@@ -854,10 +1024,12 @@ export default function Designer({ showToast }) {
               </button>
             </div>
 
+            {/* Quick 300 DPI Export */}
             <button className="btn btn-secondary btn-sm" onClick={exportSamplePNG} title="Download 300 DPI Sample PNG">
               <Download size={14} /> Sample PNG
             </button>
 
+            {/* Save to PostgreSQL */}
             <button className="btn btn-primary btn-sm" onClick={handleSaveTemplate} title="Save to Database">
               <Save size={16} /> Save Template
             </button>
@@ -866,16 +1038,19 @@ export default function Designer({ showToast }) {
       />
 
       <div className="page-container" style={{ display: 'flex', gap: '16px', height: 'calc(100vh - 84px)' }}>
-        {/* Left Toolbar Drawer */}
+        
+        {/* ========================================================================= */}
+        {/* LEFT TOOLBAR DRAWER (Tabs: Fields, Text, Shapes, Upload, Presets)         */}
+        {/* ========================================================================= */}
         <div style={{ width: '310px', display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}>
           
-          {/* Navigation Tabs for Tools */}
+          {/* Category Selector Tabs */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px', background: 'var(--surface-sunken)', padding: '4px', borderRadius: '8px' }}>
             <button 
               className={`btn btn-sm ${activeTab === 'fields' ? 'btn-primary' : 'btn-secondary'}`}
               style={{ padding: '6px 2px', fontSize: '11px' }}
               onClick={() => setActiveTab('fields')}
-              title="Dynamic Fields"
+              title="Dynamic Recipient Fields"
             >
               Fields
             </button>
@@ -883,7 +1058,7 @@ export default function Designer({ showToast }) {
               className={`btn btn-sm ${activeTab === 'text' ? 'btn-primary' : 'btn-secondary'}`}
               style={{ padding: '6px 2px', fontSize: '11px' }}
               onClick={() => setActiveTab('text')}
-              title="Text Tools"
+              title="Typography Headers"
             >
               Text
             </button>
@@ -891,7 +1066,7 @@ export default function Designer({ showToast }) {
               className={`btn btn-sm ${activeTab === 'shapes' ? 'btn-primary' : 'btn-secondary'}`}
               style={{ padding: '6px 2px', fontSize: '11px' }}
               onClick={() => setActiveTab('shapes')}
-              title="Shapes & Borders"
+              title="Shapes & Frames"
             >
               Shapes
             </button>
@@ -907,20 +1082,20 @@ export default function Designer({ showToast }) {
               className={`btn btn-sm ${activeTab === 'presets' ? 'btn-primary' : 'btn-secondary'}`}
               style={{ padding: '6px 2px', fontSize: '11px' }}
               onClick={() => setActiveTab('presets')}
-              title="Template Presets"
+              title="Design Presets"
             >
               Presets
             </button>
           </div>
 
-          {/* TAB 1: DYNAMIC PLACEHOLDERS */}
+          {/* TAB 1: DYNAMIC PLACEHOLDER FIELDS */}
           {activeTab === 'fields' && (
             <div className="card">
               <h4 style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Sparkles size={16} color="var(--primary)" /> Dynamic Recipient Fields
               </h4>
               <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 10px' }}>
-                These placeholders auto-populate dynamically per participant with auto-shrink safeguards.
+                These placeholders dynamically substitute student data with built-in auto-shrink boundaries.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <button className="btn btn-secondary btn-sm" onClick={() => addPlaceholder('STUDENT_NAME')}>
@@ -998,7 +1173,7 @@ export default function Designer({ showToast }) {
             <div className="card">
               <h4>Logos & Backgrounds</h4>
               <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 10px' }}>
-                Supports transparent PNGs for college logos & official signatures.
+                Supports transparent PNGs for official signatures & institution seals.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
@@ -1012,6 +1187,7 @@ export default function Designer({ showToast }) {
                 </label>
               </div>
 
+              {/* JSON Template Import / Export */}
               <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <button className="btn btn-secondary btn-sm" style={{ flex: 1, fontSize: '11px' }} onClick={exportTemplateJSON}>
@@ -1031,7 +1207,7 @@ export default function Designer({ showToast }) {
             <div className="card">
               <h4>Ready-to-Use Presets</h4>
               <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 10px' }}>
-                Load pre-formatted certificate templates with one click:
+                Load pre-formatted, production-ready certificate layouts:
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <button className="btn btn-secondary btn-sm" onClick={() => applyClassicPreset()}>
@@ -1047,7 +1223,9 @@ export default function Designer({ showToast }) {
             </div>
           )}
 
-          {/* OBJECT PROPERTIES INSPECTOR */}
+          {/* ========================================================================= */}
+          {/* OBJECT PROPERTIES INSPECTOR (Displayed when an item is selected)          */}
+          {/* ========================================================================= */}
           {selectedObj && (
             <div className="card" style={{ borderLeft: '3px solid var(--primary)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -1065,7 +1243,7 @@ export default function Designer({ showToast }) {
                 </div>
               </div>
 
-              {/* Dynamic Badge */}
+              {/* Dynamic Placeholder Indicator */}
               {isDynamic && (
                 <div style={{ 
                   background: '#eff6ff', 
@@ -1084,7 +1262,7 @@ export default function Designer({ showToast }) {
                 </div>
               )}
 
-              {/* Positioning & Alignment */}
+              {/* Centering Actions */}
               <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
                 <button className="btn btn-secondary btn-sm" style={{ flex: 1, fontSize: '11px' }} onClick={centerObjectHorizontally}>
                   <AlignCenter size={13} /> Center H
@@ -1094,7 +1272,7 @@ export default function Designer({ showToast }) {
                 </button>
               </div>
 
-              {/* Text-specific controls */}
+              {/* Typography Controls (For text objects) */}
               {selectedObj.type && selectedObj.type.includes('text') && (
                 <>
                   <div className="form-group" style={{ marginBottom: '8px' }}>
@@ -1203,7 +1381,7 @@ export default function Designer({ showToast }) {
                     </button>
                   </div>
 
-                  {/* Auto-Shrink & MaxWidth Settings */}
+                  {/* Dynamic Auto-Shrink & MaxWidth Settings */}
                   {isDynamic && (
                     <div style={{ padding: '8px', background: 'var(--surface-sunken)', borderRadius: '6px', marginBottom: '10px' }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', cursor: 'pointer' }}>
@@ -1241,7 +1419,7 @@ export default function Designer({ showToast }) {
                 </>
               )}
 
-              {/* Layer Ordering Buttons */}
+              {/* Layer Arrangement */}
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
                 <label style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>
                   Layer Arrangement
@@ -1264,7 +1442,9 @@ export default function Designer({ showToast }) {
             </div>
           )}
 
-          {/* SAVED TEMPLATES IN DATABASE */}
+          {/* ========================================================================= */}
+          {/* DATABASE SAVED TEMPLATES (PostgreSQL Library)                             */}
+          {/* ========================================================================= */}
           {templates.length > 0 && (
             <div className="card">
               <h4>Database Templates ({templates.length})</h4>
@@ -1304,7 +1484,9 @@ export default function Designer({ showToast }) {
           )}
         </div>
 
-        {/* Center Canvas Viewport */}
+        {/* ========================================================================= */}
+        {/* CENTER CANVAS VIEWPORT (Scaled Logical 3508x2480 A4 Frame)                */}
+        {/* ========================================================================= */}
         <div 
           ref={containerRef}
           className="card" 
@@ -1320,7 +1502,7 @@ export default function Designer({ showToast }) {
             padding: '20px'
           }}
         >
-          {/* Floating Canvas Controls Overlay */}
+          {/* Floating Canvas Zoom & Viewport Overlay */}
           <div style={{
             position: 'absolute',
             bottom: '16px',
@@ -1362,7 +1544,7 @@ export default function Designer({ showToast }) {
             </button>
           </div>
 
-          {/* Fixed A4 Canvas with Shadow */}
+          {/* Fixed A4 Canvas with Elevation Drop Shadow */}
           <div style={{ 
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.45)', 
             borderRadius: '2px', 
